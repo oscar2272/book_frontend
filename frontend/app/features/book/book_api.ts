@@ -78,5 +78,12 @@ export async function deleteBook(id: string) {
     throw new Error("Failed to delete book");
   }
 
+  // 204 No Content 응답은 본문이 없으므로 .json() 호출하지 않음
+  if (res.status === 204) {
+    console.log("Book deleted successfully");
+    return null; // 삭제 완료 후 특별한 데이터 반환 없이 종료
+  }
+
+  // 다른 응답인 경우 JSON 데이터 반환
   return res.json();
 }

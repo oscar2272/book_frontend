@@ -173,7 +173,9 @@ export default function HomePage({ loaderData }: Route.ComponentProps) {
               <td className="p-2 border">{book.author_name}</td>
               <td className="p-2 border">{book.average_rating}</td>
               <td className="p-2 border">{book.review_count}</td>
-              <td className="p-2 border">{book.published_at}</td>
+              <td className="p-2 border">
+                {new Date(book.published_at).toLocaleDateString("ko-KR")}
+              </td>
             </tr>
           ))}
         </tbody>
