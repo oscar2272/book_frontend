@@ -1,67 +1,64 @@
 const BASE_URL = "http://localhost:8000";
 
-// 브라우저에서 쿠키에서 CSRF 토큰을 가져오는 함수
-function getCookie(name: string): string | null {
-  const value = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith(name + "="))
-    ?.split("=")[1];
-  return value ? decodeURIComponent(value) : null;
+export function parseCookie(cookie: any) {
+  return Object.fromEntries(
+    cookie.split(";").map((c: any) => {
+      const [k, v] = c.trim().split("=");
+      return [k, v];
+    })
+  );
 }
-
-// CSRF 토큰 요청: 쿠키에 csrftoken 세팅됨
 export async function ensureCSRFToken() {
   const res = await fetch(`${BASE_URL}/api/csrf/`, {
     method: "GET",
     credentials: "include",
   });
   if (!res.ok) throw new Error("CSRF 토큰을 가져오지 못했습니다.");
-}
-
-export async function fetchWithCSRF(url: string, options: RequestInit = {}) {
-  if (!url) throw new Error("fetchWithCSRF: URL이 없습니다.");
-
-  let token = getCookie("csrftoken");
-  if (!token) {
-    await ensureCSRFToken();
-    token = getCookie("csrftoken");
-  }
-
-  // headers 병합 (기본값 설정)
-  const headers = new Headers(options.headers);
-  if (!(options.body instanceof FormData)) {
-    // JSON인 경우만 Content-Type 지정
-    if (!headers.has("Content-Type")) {
-      headers.set("Content-Type", "application/json");
-    }
-  }
-  if (!headers.has("X-CSRFToken")) {
-    headers.set("X-CSRFToken", token ?? "");
-  }
-
-  return fetch(url, {
-    ...options,
-    credentials: "include",
-    headers,
-  });
-}
-
-// 로그인
-export async function signin(username: string, password: string) {
-  const res = await fetchWithCSRF(`${BASE_URL}/api/login/`, {
-    method: "POST",
-    body: JSON.stringify({ username, password }),
-  });
-
-  if (!res.ok) throw new Error("로그인 실패");
   return res.json();
 }
 
-// 로그아웃 API 예시
-export async function signout() {
-  const res = await fetchWithCSRF(`${BASE_URL}/api/logout/`, {
+export async function signin(username: string, password: string) {
+  const res = await fetch("/api/login/", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include", // 이게 쿠키 전송에 필수입니다
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    const error = new Error("로그인 실패");
+    (error as any).response = { status: res.status, data: errorData };
+    throw error;
+  }
+
+  return res.json();
+}
+
+export async function signout() {
+  const token = await ensureCSRFToken(); // /api/csrf/에서 토큰 받아옴
+  const res = await fetch(`/api/logout/`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": token.csrfToken, // 반드시 넣어야 함
+    },
   });
 
   if (!res.ok) throw new Error("로그아웃 실패");
+}
+
+export async function getCurrentUser(request: Request) {
+  const cookie = request.headers.get("cookie") || ""; // 실제 쿠키
+  const res = await fetch(`${BASE_URL}/api/me/`, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      cookie: cookie,
+    },
+  });
+  if (!res.ok) throw new Error("현재 사용자 정보를 가져오지 못했습니다.");
+  return res.json();
 }

@@ -1,46 +1,78 @@
-import { Link, useParams } from "react-router";
-import { useState } from "react";
+import { Link, useParams, useNavigate, useFetcher } from "react-router";
+import { useEffect, useState } from "react";
+import { getCurrentUser } from "~/features/auth/user_api";
+import type { Route } from "./+types/book-detail-page";
+import { deleteBook, getBook } from "../book_api";
+import { createReview, updateReview } from "~/features/review/review_api";
 
-const mockUser = {
-  id: 1,
-  username: "user123",
-  isAdmin: true, // ✅ 관리자 여부
-};
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const bookId = params.id;
+  if (!bookId) {
+    throw new Response("도서 ID가 없습니다.", { status: 400 });
+  }
+  const book = await getBook(bookId);
+  console.log("도서 상세 정보 로드:", book);
+  const user = await getCurrentUser(request);
+  const userId = user?.id || null;
+  const isAdmin = user?.is_admin;
+  return { book, userId, isAdmin };
+}
 
-const mockBook = {
-  id: 1,
-  title: "예시 책 제목",
-  author: "홍길동",
-  publishedAt: "2023-12-01",
-  avgRating: 4.3,
-  reviewCount: 2,
-  reviews: [
-    {
-      id: 1,
-      content: "정말 유익한 책이에요!",
-      author: "user123",
-      authorId: 1,
-      createdAt: "2025-07-25",
-    },
-    {
-      id: 2,
-      content: "전반적으로 괜찮아요.",
-      author: "booklover",
-      authorId: 2,
-      createdAt: "2025-07-24",
-    },
-  ],
-};
+export async function action({ request, params }: Route.ActionArgs) {
+  const bookId = params.id;
+  const formData = await request.formData();
 
-export default function BookDetailPage() {
+  if (!bookId) {
+    throw new Response("도서 ID가 없습니다.", { status: 400 });
+  }
+
+  if (request.method === "POST") {
+    const content = formData.get("content")?.toString() || "";
+    const ratingStr = formData.get("rating")?.toString();
+    const rating = ratingStr ? parseInt(ratingStr) : 5;
+
+    if (!content || isNaN(rating)) {
+      throw new Response("내용 또는 평점이 누락되었습니다.", { status: 400 });
+    }
+
+    await createReview(bookId, content, rating);
+  } else if (request.method === "PUT") {
+    const reviewId = formData.get("review_id")?.toString();
+    const newContent = formData.get("content")?.toString() || "";
+    const ratingStr = formData.get("rating")?.toString();
+    const rating = ratingStr ? parseInt(ratingStr) : 5;
+    console.log("도서 ID:", bookId);
+    console.log("reviewId:", reviewId);
+    console.log("newContent:", newContent);
+    console.log("rating:", rating);
+    if (!reviewId || !newContent || isNaN(rating)) {
+      throw new Response("필수 데이터 누락", { status: 400 });
+    }
+
+    await updateReview(bookId, reviewId, newContent, rating);
+  } else if (request.method === "DELETE") {
+    // 도서 삭제 로직은 여기서 처리
+    await deleteBook(bookId);
+    throw new Response("도서 삭제는 아직 구현되지 않았습니다.", {
+      status: 501,
+    });
+  }
+}
+
+export default function BookDetailPage({ loaderData }: Route.ComponentProps) {
+  const { book, userId, isAdmin } = loaderData;
   const { id } = useParams();
-  const user = mockUser;
-  const [reviews, setReviews] = useState(mockBook.reviews);
-  const [newReview, setNewReview] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const fetcher = useFetcher();
+  const navigate = useNavigate();
   const [editContent, setEditContent] = useState("");
-
-  if (parseInt(id ?? "") !== mockBook.id) {
+  const [editingId, setEditingId] = useState<number | null>(null);
+  useEffect(() => {
+    if (fetcher.state === "idle" && editingId !== null) {
+      setEditingId(null);
+      setEditContent("");
+    }
+  }, [fetcher.state]);
+  if (!book) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-500">
         <p>도서를 찾을 수 없습니다. (404)</p>
@@ -48,166 +80,137 @@ export default function BookDetailPage() {
     );
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newReview.trim()) return;
-
-    const newId = reviews.length + 1;
-    const today = new Date().toISOString().split("T")[0];
-
-    setReviews([
-      ...reviews,
-      {
-        id: newId,
-        content: newReview,
-        author: user.username,
-        authorId: user.id,
-        createdAt: today,
-      },
-    ]);
-    setNewReview("");
-  };
-
-  const handleEdit = (id: number, content: string) => {
-    setEditingId(id);
-    setEditContent(content);
-  };
-
-  const handleEditSubmit = (id: number) => {
-    setReviews(
-      reviews.map((r) => (r.id === id ? { ...r, content: editContent } : r))
-    );
-    setEditingId(null);
-    setEditContent("");
-  };
-
-  const handleDelete = (id: number) => {
-    setReviews(reviews.filter((r) => r.id !== id));
-  };
-
-  const handleDeleteBook = () => {
-    const confirmed = window.confirm("정말 이 도서를 삭제하시겠습니까?");
-    if (confirmed) {
-      alert("삭제 처리되었습니다 (실제 API 연결 필요)");
-      // 예: navigate('/') 등 목록 페이지로 이동
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4">
-      <div className="max-w-2xl mx-auto bg-white shadow-md rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold">{mockBook.title}</h2>
-          <div className="flex gap-3 items-center">
-            <Link to="/" className="text-sm text-blue-500 hover:underline">
-              ← 목록으로
-            </Link>
-            {user?.isAdmin && (
-              <>
-                <Link
-                  to={`/books/${mockBook.id}/edit`}
-                  className="text-sm text-yellow-600 hover:underline"
-                >
-                  도서 수정
-                </Link>
-                <button
-                  className="text-sm text-red-600 hover:underline"
-                  onClick={handleDeleteBook}
-                >
-                  도서 삭제
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+    <div className="min-h-screen bg-gray-50 py-10 px-4 max-w-3xl mx-auto">
+      <h1 className="text-3xl font-bold mb-2">{book.title}</h1>
+      <p className="text-gray-600 mb-4">
+        저자: {book.author.name} | 출판일:{" "}
+        {new Date(book.published_at).toLocaleDateString()}
+      </p>
+      <p className="mb-6">
+        평균 평점: {book.average_rating} / 리뷰 수: {book.review_count}
+      </p>
 
-        <p className="text-gray-600 mb-1">저자: {mockBook.author}</p>
-        <p className="text-gray-600 mb-1">출판일: {mockBook.publishedAt}</p>
-        <p className="text-gray-700 mb-4">
-          ⭐ 평균 평점: {mockBook.avgRating} / 리뷰 {reviews.length}개
-        </p>
+      {isAdmin && (
+        <fetcher.Form method="DELETE">
+          <button
+            type="submit"
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 mb-6"
+            onClick={(e) => {
+              if (!window.confirm("정말 이 도서를 삭제하시겠습니까?")) {
+                e.preventDefault();
+              }
+            }}
+          >
+            도서 삭제
+          </button>
+        </fetcher.Form>
+      )}
 
-        <hr className="my-4" />
-
-        <h3 className="text-xl font-semibold mb-3">리뷰</h3>
-        <ul className="space-y-4 mb-6">
-          {reviews.map((review) => (
-            <li key={review.id} className="border-t pt-2">
-              {editingId === review.id ? (
-                <div className="space-y-2">
+      <section>
+        <h2 className="text-xl font-semibold mb-3">리뷰 목록</h2>
+        {book.reviews.length === 0 ? (
+          <p className="text-gray-500">아직 리뷰가 없습니다.</p>
+        ) : (
+          book.reviews.map((review: any) => (
+            <div
+              key={review.review_id}
+              className="border rounded p-3 mb-3 bg-white"
+            >
+              {editingId === review.review_id ? (
+                <fetcher.Form method="PUT">
+                  <input
+                    type="hidden"
+                    name="review_id"
+                    value={review.review_id}
+                  />
                   <textarea
+                    name="content"
+                    className="w-full border p-2 mb-2"
+                    rows={3}
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full border rounded px-2 py-1"
-                    rows={2}
                   />
-                  <div className="flex gap-2">
+                  <input
+                    type="number"
+                    name="rating"
+                    min={1}
+                    max={5}
+                    defaultValue={review.rating}
+                    className="border rounded p-1 mr-2"
+                  />
+                  <div className="mt-2 space-x-2">
                     <button
-                      onClick={() => handleEditSubmit(review.id)}
-                      className="text-blue-500 hover:underline"
+                      type="submit"
+                      className="px-3 py-1 bg-blue-600 text-white rounded"
                     >
                       저장
                     </button>
                     <button
+                      type="button"
                       onClick={() => setEditingId(null)}
-                      className="text-gray-500 hover:underline"
+                      className="px-3 py-1 bg-gray-300 text-black rounded"
                     >
                       취소
                     </button>
                   </div>
-                </div>
+                </fetcher.Form>
               ) : (
                 <>
-                  <p className="text-gray-800">{review.content}</p>
-                  <div className="flex justify-between text-sm text-gray-500 mt-1">
-                    <span>
-                      - {review.author}, {review.createdAt}
-                    </span>
-                    {user && user.id === review.authorId && (
-                      <div className="space-x-2">
-                        <button
-                          onClick={() => handleEdit(review.id, review.content)}
-                          className="text-blue-500 hover:underline"
-                        >
-                          수정
-                        </button>
-                        <button
-                          onClick={() => handleDelete(review.id)}
-                          className="text-red-500 hover:underline"
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <p>{review.content}</p>
+                  <p className="text-sm text-gray-500">
+                    작성자: {review.user_name} | 평점: {review.rating} | 작성일:{" "}
+                    {new Date(review.created_at).toLocaleString()}
+                  </p>
+                  {userId === review.user_id && (
+                    <button
+                      onClick={() => {
+                        setEditingId(review.review_id);
+                        setEditContent(review.content);
+                      }}
+                      className="text-blue-600 hover:underline mt-2"
+                    >
+                      수정
+                    </button>
+                  )}
                 </>
               )}
-            </li>
-          ))}
-        </ul>
+            </div>
+          ))
+        )}
+      </section>
 
-        {user ? (
-          <form className="space-y-3" onSubmit={handleSubmit}>
+      {userId ? (
+        <section className="mt-8">
+          <h2 className="text-xl font-semibold mb-3">리뷰 작성</h2>
+          <fetcher.Form method="POST">
             <textarea
-              placeholder="리뷰를 입력하세요"
-              value={newReview}
-              onChange={(e) => setNewReview(e.target.value)}
-              className="w-full border rounded px-3 py-2"
-              rows={3}
+              name="content"
+              className="w-full border rounded p-2 mb-2"
+              rows={4}
+              placeholder="리뷰를 입력하세요..."
+            />
+            <input
+              type="number"
+              name="rating"
+              min={1}
+              max={5}
+              defaultValue={5}
+              className="border rounded p-1 mr-2"
             />
             <button
               type="submit"
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
             >
-              리뷰 등록
+              작성
             </button>
-          </form>
-        ) : (
-          <p className="text-sm text-gray-500">
-            리뷰를 작성하려면 로그인해주세요.
-          </p>
-        )}
-      </div>
+          </fetcher.Form>
+        </section>
+      ) : (
+        <p className="mt-8 text-gray-500">
+          로그인 후 리뷰를 작성할 수 있습니다.
+        </p>
+      )}
     </div>
   );
 }

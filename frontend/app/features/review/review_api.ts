@@ -1,6 +1,6 @@
-import { fetchWithCSRF } from "../auth/user_api";
+import { ensureCSRFToken } from "../auth/user_api";
 
-const BASE_URL = "http://127.0.0.1:8000";
+const BASE_URL = "http://127.0.0.1:8000/api";
 
 // 리뷰목록 조회
 export async function getReviews(bookId: string) {
@@ -29,11 +29,20 @@ export async function getReview(bookId: string, reviewId: string) {
 }
 
 //리뷰 등록
-export async function createReview(bookId: string, data: FormData) {
-  const res = await fetchWithCSRF(`${BASE_URL}/reviews/`, {
+export async function createReview(
+  bookId: string,
+  content: string,
+  rating: number
+) {
+  const token = await ensureCSRFToken();
+  const res = await fetch(`${BASE_URL}/reviews/`, {
     method: "POST",
     credentials: "include",
-    body: data,
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": token.csrfToken,
+    },
+    body: JSON.stringify({ book_id: bookId, content: content, rating }),
   });
 
   if (!res.ok) {
@@ -47,12 +56,22 @@ export async function createReview(bookId: string, data: FormData) {
 export async function updateReview(
   bookId: string,
   reviewId: string,
-  data: FormData
+  content: string,
+  rating: number
 ) {
-  const res = await fetchWithCSRF(`${BASE_URL}/reviews/${reviewId}/`, {
+  const token = await ensureCSRFToken();
+  const res = await fetch(`${BASE_URL}/reviews/${reviewId}/`, {
     method: "PUT",
     credentials: "include",
-    body: data,
+    body: JSON.stringify({
+      book_id: bookId,
+      content: content,
+      rating: rating,
+    }),
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": token.csrfToken,
+    },
   });
 
   if (!res.ok) {
@@ -64,7 +83,8 @@ export async function updateReview(
 
 // 리뷰 삭제
 export async function deleteReview(bookId: string, reviewId: string) {
-  const res = await fetchWithCSRF(`${BASE_URL}/reviews/${reviewId}/`, {
+  await ensureCSRFToken();
+  const res = await fetch(`${BASE_URL}/reviews/${reviewId}/`, {
     method: "DELETE",
     credentials: "include",
   });

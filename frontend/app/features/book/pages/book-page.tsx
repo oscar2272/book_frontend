@@ -1,47 +1,58 @@
-import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { signout } from "~/features/auth/user_api";
-
-const mockUser = {
-  id: 1,
-  username: "admin",
-  isAdmin: true,
-};
-
-const books = Array.from({ length: 30 }, (_, i) => ({
-  id: i + 1,
-  title: `책 제목 ${i + 1}`,
-  author: `저자 ${i + 1}`,
-  avgRating: (Math.random() * 5).toFixed(1),
-  reviewCount: Math.floor(Math.random() * 100),
-  createdAt: `2025-07-${(i % 30) + 1}`.padStart(10, "0"),
-}));
+import { getCurrentUser, signout } from "~/features/auth/user_api";
+import type { Route } from "./+types/book-page";
+import { getBooks } from "../book_api";
+import { useState } from "react";
 
 const ITEMS_PER_PAGE = 10;
-export const loader = async () => {
-  return books;
-};
-export default function HomePage() {
-  const [page, setPage] = useState(1);
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const url = new URL(request.url);
+  const searchParams = url.search;
+
+  const booksResponse = await getBooks(searchParams);
+  const books = booksResponse.results;
+  const totalCount = booksResponse.count;
+
+  const user = await getCurrentUser(request);
+  const userId = user?.id || null;
+  const isAdmin = user?.is_admin;
+
+  return { books, totalCount, isAdmin, userId };
+}
+
+export default function HomePage({ loaderData }: Route.ComponentProps) {
+  const { books, totalCount, isAdmin, userId } = loaderData;
   const [searchParams, setSearchParams] = useSearchParams();
+  const [searchText, setSearchText] = useState(
+    searchParams.get("search") || ""
+  );
   const navigate = useNavigate();
 
+  const currentPage = Number(searchParams.get("page") ?? "1");
   const ordering = searchParams.get("ordering") || "-created_at";
-  const totalPages = Math.ceil(books.length / ITEMS_PER_PAGE);
-  const currentItems = books.slice(
-    (page - 1) * ITEMS_PER_PAGE,
-    page * ITEMS_PER_PAGE
-  );
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+
+  const goToPage = (page: number) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("page", page.toString());
+    setSearchParams(params);
+  };
+
+  const handleSearch = () => {
+    const params = new URLSearchParams(searchParams);
+    params.set("search", searchText);
+    params.set("page", "1"); // 검색 시 페이지 초기화
+    setSearchParams(params);
+  };
 
   const handleSort = (field: string) => {
     const current = searchParams.get("ordering");
     const nextOrdering = current === field ? `-${field}` : field;
-
-    setSearchParams((prev) => {
-      const newParams = new URLSearchParams(prev);
-      newParams.set("ordering", nextOrdering);
-      return newParams;
-    });
+    const params = new URLSearchParams(searchParams);
+    params.set("ordering", nextOrdering);
+    params.set("page", "1");
+    setSearchParams(params);
   };
 
   const renderSortButton = (label: string, field: string) => {
@@ -63,20 +74,28 @@ export default function HomePage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 text-gray-800">
-      {/* 상단 헤더 */}
+      {/* 헤더 */}
       <header className="flex items-center justify-between mb-8 border-b pb-4">
         <h1 className="text-xl font-bold text-blue-700">📚 Book App</h1>
 
         <div className="flex gap-2">
-          {mockUser ? (
+          {userId ? (
             <>
-              {mockUser.isAdmin && (
-                <button
-                  onClick={() => navigate("/books/new")}
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                >
-                  도서 등록
-                </button>
+              {isAdmin && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => navigate("/books/new")}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    도서 등록
+                  </button>
+                  <button
+                    onClick={() => navigate("/books/author/new")}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    저자 등록
+                  </button>
+                </div>
               )}
               <button
                 onClick={async () => {
@@ -110,8 +129,20 @@ export default function HomePage() {
         <input
           type="text"
           placeholder="🔍 제목 검색"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
           className="px-3 py-2 border rounded w-52"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSearch();
+          }}
         />
+        <button
+          onClick={handleSearch}
+          className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          검색
+        </button>
+
         <span className="text-gray-600">정렬:</span>
         <div className="flex gap-2">
           {renderSortButton("평점", "avg_rating")}
@@ -131,7 +162,7 @@ export default function HomePage() {
           </tr>
         </thead>
         <tbody>
-          {currentItems.map((book) => (
+          {books.map((book: any) => (
             <tr
               key={book.id}
               className="hover:bg-gray-50 cursor-pointer"
@@ -139,10 +170,10 @@ export default function HomePage() {
             >
               <td className="p-2 border">{book.id}</td>
               <td className="p-2 border">{book.title}</td>
-              <td className="p-2 border">{book.author}</td>
-              <td className="p-2 border">{book.avgRating}</td>
-              <td className="p-2 border">{book.reviewCount}</td>
-              <td className="p-2 border">{book.createdAt}</td>
+              <td className="p-2 border">{book.author_name}</td>
+              <td className="p-2 border">{book.average_rating}</td>
+              <td className="p-2 border">{book.review_count}</td>
+              <td className="p-2 border">{book.published_at}</td>
             </tr>
           ))}
         </tbody>
@@ -151,8 +182,8 @@ export default function HomePage() {
       {/* 페이지네이션 */}
       <div className="mt-6 flex justify-center space-x-2">
         <button
-          onClick={() => setPage((p) => Math.max(p - 1, 1))}
-          disabled={page === 1}
+          onClick={() => goToPage(Math.max(currentPage - 1, 1))}
+          disabled={currentPage === 1}
           className="px-3 py-1 border rounded disabled:opacity-50"
         >
           이전
@@ -160,17 +191,17 @@ export default function HomePage() {
         {Array.from({ length: totalPages }, (_, i) => (
           <button
             key={i}
-            onClick={() => setPage(i + 1)}
+            onClick={() => goToPage(i + 1)}
             className={`px-3 py-1 border rounded ${
-              page === i + 1 ? "bg-blue-500 text-white" : ""
+              currentPage === i + 1 ? "bg-blue-500 text-white" : ""
             }`}
           >
             {i + 1}
           </button>
         ))}
         <button
-          onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-          disabled={page === totalPages}
+          onClick={() => goToPage(Math.min(currentPage + 1, totalPages))}
+          disabled={currentPage === totalPages}
           className="px-3 py-1 border rounded disabled:opacity-50"
         >
           다음

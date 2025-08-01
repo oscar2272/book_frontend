@@ -1,9 +1,9 @@
-import { fetchWithCSRF } from "../auth/user_api";
+import { ensureCSRFToken } from "../auth/user_api";
 
 const BASE_URL = "http://localhost:8000";
 
-export async function getBooks() {
-  const res = await fetch(`${BASE_URL}/books/`, {
+export async function getBooks(query: string) {
+  const res = await fetch(`${BASE_URL}/api/books/${query}`, {
     method: "GET",
     credentials: "include",
   });
@@ -16,11 +16,16 @@ export async function getBooks() {
 }
 
 //수정필요
-export async function createBook(data: FormData) {
-  const res = await fetchWithCSRF(`${BASE_URL}/books/`, {
+export async function createBook(title: string, author: string) {
+  const token = await ensureCSRFToken();
+  const res = await fetch(`${BASE_URL}/api/books/`, {
     method: "POST",
     credentials: "include",
-    body: data,
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": token.csrfToken,
+    },
+    body: JSON.stringify({ title, author }),
   });
 
   if (!res.ok) {
@@ -31,7 +36,7 @@ export async function createBook(data: FormData) {
 }
 
 export async function getBook(id: string) {
-  const res = await fetch(`${BASE_URL}/books/${id}/`, {
+  const res = await fetch(`${BASE_URL}/api/books/${id}/`, {
     method: "GET",
     credentials: "include",
   });
@@ -44,7 +49,8 @@ export async function getBook(id: string) {
 }
 
 export async function updateBook(id: string, data: FormData) {
-  const res = await fetchWithCSRF(`${BASE_URL}/books/${id}/`, {
+  await ensureCSRFToken();
+  const res = await fetch(`${BASE_URL}/api/books/${id}/`, {
     method: "PUT",
     credentials: "include",
     body: data,
@@ -58,9 +64,14 @@ export async function updateBook(id: string, data: FormData) {
 }
 
 export async function deleteBook(id: string) {
-  const res = await fetchWithCSRF(`${BASE_URL}/books/${id}/`, {
+  const token = await ensureCSRFToken();
+  const res = await fetch(`${BASE_URL}/api/books/${id}/delete/`, {
     method: "DELETE",
     credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": token.csrfToken, // CSRF 토큰을 반드시 포함해야 합니다
+    },
   });
 
   if (!res.ok) {

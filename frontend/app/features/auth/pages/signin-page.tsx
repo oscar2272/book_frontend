@@ -1,7 +1,18 @@
 import { useState } from "react";
-import { signin } from "../user_api";
+import { getCurrentUser, signin } from "../user_api";
 import { useNavigate } from "react-router";
-
+import type { Route } from "./+types/signin-page";
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const user = await getCurrentUser(request);
+  const userId = user?.id || null;
+  if (userId) {
+    // 이미 로그인된 사용자라면 홈으로 리다이렉트
+    return new Response(null, {
+      status: 302,
+      headers: { Location: "/" },
+    });
+  }
+}
 export default function LoginPage() {
   const navigate = useNavigate();
   const [formErrors, setFormErrors] = useState<{
@@ -12,6 +23,9 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError("");
+    setFormErrors({});
+
     const formData = new FormData(e.currentTarget);
     const username = formData.get("username")?.toString() ?? "";
     const password = formData.get("password")?.toString() ?? "";
@@ -28,8 +42,13 @@ export default function LoginPage() {
     try {
       await signin(username, password);
       navigate("/");
-    } catch (err) {
-      setError("로그인에 실패했습니다. 다시 시도해주세요.");
+    } catch (err: any) {
+      if (err?.response && err.response.status === 400 && err.response.data) {
+        // 백엔드에서 필드별 에러가 오면 세팅
+        setFormErrors(err.response.data);
+      } else {
+        setError("로그인에 실패했습니다. 다시 시도해주세요.");
+      }
     }
   };
 
